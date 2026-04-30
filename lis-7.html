@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Osciloscopio Avanzado: Responsive y Rastreo</title>
+    <style>
+        :root {
+            --bg-color: #0d0d0d;
+            --panel-bg: #1a1a1a;
+            --text-color: #eee;
+            --osc-color: #39FF14; /* Verde neón clásico */
+            --x-color: #ff0055;
+            --y-color: #00ddff;
+        }
+
+        body {
+            font-family: system-ui, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            /* Solución móvil: dvh y overflow auto */
+            min-height: 100dvh; 
+            overflow-y: auto; 
+            overflow-x: hidden;
+        }
+
+        header {
+            background: rgba(0,0,0,0.9);
+            padding: 10px 20px;
+            text-align: center;
+            border-bottom: 2px solid #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            min-height: 80px;
+            box-sizing: border-box;
+        }
+
+        h1 { margin: 0; font-size: 1.4rem; letter-spacing: 1px; }
+
+        button {
+            background-color: #333;
+            color: white;
+            border: 2px solid #555;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        button:hover { background-color: #444; border-color: #777; }
+        
+        #audio-btn { background-color: #1b5e20; border-color: #4caf50; }
+        #audio-btn.active { background-color: #b71c1c; border-color: #ef5350; }
+        
+        .mode-btn.active { background-color: #555; color: #fff; border-color: #999; }
+        #plot-btn.active { background-color: #673ab7; border-color: #d1c4e9; }
+        #pc-mode-btn.active { background-color: #ff9800; border-color: #ffe0b2; color: #000; }
+
+        .main-layout {
+            display: flex;
+            justify-content: space-between;
+            align-items: stretch;
+            width: 100%;
+            height: auto;
+            min-height: calc(100dvh - 80px);
+            padding: 20px;
+            box-sizing: border-box;
+            gap: 15px;
+        }
+
+        /* Paneles Laterales (Teclados) */
+        .side-panel {
+            background-color: var(--panel-bg);
+            border-radius: 10px;
+            border: 2px solid #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px 0;
+            width: 18%;
+            min-width: 140px; /* Reducido para móviles */
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+        }
+
+        .player-title { font-size: 1rem; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; text-align: center;}
+        .title-x { color: var(--x-color); text-shadow: 0 0 5px rgba(255,0,85,0.5); }
+        .title-y { color: var(--y-color); text-shadow: 0 0 5px rgba(0,221,255,0.5); }
+        .freq-display { font-family: monospace; font-size: 1.6rem; color: #fff; margin-bottom: 10px; }
+
+        .keyboard-wrapper {
+            position: relative;
+            display: flex;
+            flex-direction: column-reverse;
+            flex-grow: 1;
+            width: 100px; /* Reducido para adaptabilidad */
+            max-width: 130px;
+            user-select: none;
+        }
+
+        /* Diseño de teclas piano */
+        .key {
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            padding: 5px;
+            box-sizing: border-box;
+            cursor: pointer;
+            touch-action: none; /* Previene scroll al tocar las teclas en móvil */
+        }
+        
+        .key.piano-white { background-color: #f5f5f5; width: 100%; flex: 1; border: 1px solid #222; }
+        .key.piano-black { background-color: #111; position: absolute; width: 65%; height: calc(100% / 15 * 0.7); z-index: 2; transform: translateY(50%); border: 1px solid #333; }
+        
+        .pc-mode-active .key.piano-black { height: calc(100% / 8 * 0.7); } 
+
+        .left-facing .key.piano-black { right: 0; border-radius: 5px 0 0 5px; justify-content: flex-end; }
+        .right-facing .key.piano-black { left: 0; border-radius: 0 5px 5px 0; }
+
+        /* Diseño de pads */
+        .key.pad-even { background-color: #333; flex: 1; width: 100%; border: 1px solid #111; }
+        .key.pad-odd { background-color: #222; flex: 1; width: 100%; border: 1px solid #111; }
+
+        .pc-label {
+            font-family: monospace;
+            font-size: 12px;
+            font-weight: bold;
+            pointer-events: none;
+            opacity: 0.5;
+        }
+        .piano-white .pc-label { color: #000; }
+        .piano-black .pc-label, .pad-even .pc-label, .pad-odd .pc-label { color: #fff; }
+
+        .key:active { filter: brightness(1.5); }
+        .key.active-x { background-color: var(--x-color) !important; box-shadow: inset 0 0 15px rgba(0,0,0,0.5); }
+        .key.active-y { background-color: var(--y-color) !important; box-shadow: inset 0 0 15px rgba(0,0,0,0.5); }
+
+        /* Panel Central */
+        .center-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            flex-grow: 1;
+            min-width: 250px;
+        }
+
+        .controls-top {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            background: rgba(0,0,0,0.5);
+            padding: 12px 20px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        canvas {
+            background-color: #030a05;
+            border-radius: 8px;
+            border: 4px solid #444;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8), inset 0 0 40px rgba(57, 255, 20, 0.15);
+            width: 100%;
+            max-width: 550px;
+            max-height: 60vh; /* Evita que el canvas expulse los controles en horizontal */
+            aspect-ratio: 1 / 1;
+        }
+
+        .phase-control {
+            margin-top: 20px;
+            text-align: center;
+            background: var(--panel-bg);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #phase {
+            width: 100%;
+            max-width: 350px;
+            accent-color: var(--osc-color);
+            margin-top: 10px;
+        }
+
+        /* --- ADAPTABILIDAD A PANTALLAS PEQUEÑAS (Responsive Design) --- */
+        
+        /* Tablets y móviles en vertical */
+        @media (max-width: 850px) {
+            .main-layout { padding: 10px; gap: 10px; }
+            .side-panel { min-width: 90px; width: 22%; padding: 10px 0; }
+            .keyboard-wrapper { width: 70px; }
+            .freq-display { font-size: 1.2rem; }
+            .player-title { font-size: 0.85rem; }
+            button { font-size: 0.85rem; padding: 6px 12px; }
+            .controls-top { padding: 8px; margin-bottom: 10px; }
+        }
+
+        /* Móviles en horizontal (Landscape) */
+        @media (max-height: 500px) {
+            header { min-height: 50px; padding: 5px 10px; }
+            h1 { font-size: 1.1rem; }
+            .main-layout { min-height: calc(100dvh - 50px); padding: 5px; }
+            canvas { max-height: 70vh; }
+            .phase-control { margin-top: 10px; padding: 5px; }
+            .freq-display { font-size: 1.1rem; margin-bottom: 5px; }
+        }
+
+        /* Móviles muy estrechos */
+        @media (max-width: 480px) {
+            .side-panel { min-width: 75px; }
+            .keyboard-wrapper { width: 60px; }
+            .pc-label { display: none; } /* Ocultar labels de PC en pantallas muy finas */
+            .center-panel { min-width: 180px; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Figuras de Lissajous</h1>
+    <button id="audio-btn">► Iniciar Audio</button>
+</header>
+
+<div class="main-layout">
+    <!-- Panel Izquierdo: Eje X -->
+    <div class="side-panel">
+        <div class="player-title title-x">Eje X<br>(Base)</div>
+        <div class="freq-display"><span id="readoutX">0.0</span></div>
+        <div class="keyboard-wrapper left-facing" id="keyboard-x"></div>
+    </div>
+
+    <!-- Panel Central: Osciloscopio y Modos -->
+    <div class="center-panel">
+        <div class="controls-top">
+            <button class="mode-btn active" data-mode="occidental">Piano</button>
+            <button class="mode-btn" data-mode="oriental">Oriental</button>
+            <button class="mode-btn" data-mode="armonicos">Armónicos</button>
+            <div style="width: 2px; background: #555; margin: 0 2px;"></div>
+            <button id="pc-mode-btn">Teclado PC: OFF</button>
+            <button id="plot-btn">Proyección: OFF</button>
+        </div>
+
+        <canvas id="osciloscopio" width="600" height="600"></canvas>
+        
+        <div class="phase-control">
+            <label style="color:#ddd; font-weight: bold;">Desfase Angular: <span id="readoutPhase" style="color: var(--osc-color);">90</span>°</label><br>
+            <input type="range" id="phase" min="0" max="360" value="90" step="1">
+        </div>
+    </div>
+
+    <!-- Panel Derecho: Eje Y -->
+    <div class="side-panel">
+        <div class="player-title title-y">Eje Y<br>(Modulador)</div>
+        <div class="freq-display"><span id="readoutY">0.0</span></div>
+        <div class="keyboard-wrapper right-facing" id="keyboard-y"></div>
+    </div>
+</div>
+
+<script>
+    // --- 1. Inicialización de Audio ---
+    let audioCtx = null;
+    let oscX = null; let gainX = null;
+    let oscY = null; let gainY = null;
+    let freqX = 0; let freqY = 0;
+
+    const audioBtn = document.getElementById('audio-btn');
+    const readoutX = document.getElementById('readoutX');
+    const readoutY = document.getElementById('readoutY');
+
+    function toggleAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            oscX = audioCtx.createOscillator(); gainX = audioCtx.createGain();
+            oscX.type = 'sine'; gainX.gain.value = 0; 
+            oscX.connect(gainX); gainX.connect(audioCtx.destination); oscX.start();
+
+            oscY = audioCtx.createOscillator(); gainY = audioCtx.createGain();
+            oscY.type = 'sine'; gainY.gain.value = 0; 
+            oscY.connect(gainY); gainY.connect(audioCtx.destination); oscY.start();
+
+            audioBtn.textContent = "■ Detener Audio"; 
+            audioBtn.classList.add('active');
+        } else {
+            audioCtx.close().then(() => {
+                audioCtx = null; oscX = null; oscY = null;
+                audioBtn.textContent = "► Iniciar Audio"; 
+                audioBtn.classList.remove('active');
+                freqX = 0; freqY = 0; 
+                readoutX.textContent = "0.0"; readoutY.textContent = "0.0";
+                document.querySelectorAll('.key').forEach(k => k.classList.remove('active-x', 'active-y'));
+            });
+        }
+    }
+    audioBtn.addEventListener('click', toggleAudio);
+
+    function playTone(axis, freq, keyElement) {
+        if (!audioCtx) return; 
+        if (axis === 'X') {
+            freqX = parseFloat(freq); readoutX.textContent = freqX.toFixed(1);
+            oscX.frequency.setValueAtTime(freqX, audioCtx.currentTime); 
+            gainX.gain.setTargetAtTime(0.4, audioCtx.currentTime, 0.015);
+            if(keyElement) keyElement.classList.add('active-x');
+        } else {
+            freqY = parseFloat(freq); readoutY.textContent = freqY.toFixed(1);
+            oscY.frequency.setValueAtTime(freqY, audioCtx.currentTime); 
+            gainY.gain.setTargetAtTime(0.4, audioCtx.currentTime, 0.015);
+            if(keyElement) keyElement.classList.add('active-y');
+        }
+    }
+
+    function stopTone(axis, keyElement) {
+        if (!audioCtx) return;
+        if (axis === 'X') { 
+            gainX.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05); freqX = 0; 
+            if(keyElement) keyElement.classList.remove('active-x');
+            else document.querySelectorAll('#keyboard-x .key').forEach(k => k.classList.remove('active-x'));
+        } else { 
+            gainY.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05); freqY = 0; 
+            if(keyElement) keyElement.classList.remove('active-y');
+            else document.querySelectorAll('#keyboard-y .key').forEach(k => k.classList.remove('active-y'));
+        }
+    }
+
+    // --- 2. Lógica de Modos Musicales y Mapeo PC ---
+    const scales = { occidental: [], oriental: [], armonicos: [] };
+    const pcKeysX = ['z','s','x','d','c','v','g','b','h','n','j','m',','];
+    const pcKeysY = ['q','2','w','3','e','r','5','t','6','y','7','u','i'];
+
+    const noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+    let distA4 = 0; let wCount = 0;
+    for(let oct = 4; oct <= 6; oct++) {
+        let start = (oct === 4) ? 9 : 0;
+        let end = (oct === 6) ? 9 : 11;
+        for(let i = start; i <= end; i++) {
+            const isBlack = noteNames[i].includes("#");
+            const freq = 440 * Math.pow(2, distA4 / 12);
+            if (isBlack) { scales.occidental.push({ freq, type: 'piano-black', wBelow: wCount - 1 }); } 
+            else { scales.occidental.push({ freq, type: 'piano-white' }); wCount++; }
+            distA4++;
+        }
+    }
+    for(let i = 0; i <= 24; i++) { scales.oriental.push({ freq: 440 * Math.pow(2, i / 24), type: i % 2 === 0 ? 'pad-even' : 'pad-odd' }); }
+    for(let i = 4; i <= 24; i++) { scales.armonicos.push({ freq: 110 * i, type: i % 2 === 0 ? 'pad-even' : 'pad-odd' }); }
+
+    let currentMode = 'occidental';
+    let pcMode = false;
+
+    const pcModeBtn = document.getElementById('pc-mode-btn');
+    pcModeBtn.addEventListener('click', () => {
+        pcMode = !pcMode;
+        pcModeBtn.classList.toggle('active');
+        pcModeBtn.textContent = `Teclado PC: ${pcMode ? 'ON' : 'OFF'}`;
+        document.getElementById('keyboard-x').classList.toggle('pc-mode-active', pcMode);
+        document.getElementById('keyboard-y').classList.toggle('pc-mode-active', pcMode);
+        stopTone('X'); stopTone('Y');
+        renderKeyboards();
+    });
+
+    function renderKeyboards() {
+        const containers = { X: document.getElementById('keyboard-x'), Y: document.getElementById('keyboard-y') };
+        let scale = scales[currentMode];
+        if (pcMode) scale = scale.slice(0, 13);
+
+        ['X', 'Y'].forEach(axis => {
+            const container = containers[axis];
+            container.innerHTML = ''; 
+            const keysMap = axis === 'X' ? pcKeysX : pcKeysY;
+            
+            if (currentMode === 'occidental') {
+                const whites = scale.filter(n => n.type === 'piano-white');
+                const totalWhites = whites.length;
+                whites.forEach((note, index) => {
+                    const key = document.createElement('div');
+                    key.className = 'key piano-white'; key.dataset.freq = note.freq; key.dataset.axis = axis;
+                    if(pcMode) {
+                        const originalIndex = scale.indexOf(note);
+                        key.dataset.pc = keysMap[originalIndex];
+                        key.innerHTML = `<span class="pc-label">${keysMap[originalIndex].toUpperCase()}</span>`;
+                    }
+                    container.appendChild(key);
+                });
+                scale.filter(n => n.type === 'piano-black').forEach(note => {
+                    const key = document.createElement('div');
+                    key.className = 'key piano-black'; key.dataset.freq = note.freq; key.dataset.axis = axis;
+                    key.style.bottom = `calc(${(note.wBelow + 1)} * (100% / ${totalWhites}))`;
+                    if(pcMode) {
+                        const originalIndex = scale.indexOf(note);
+                        key.dataset.pc = keysMap[originalIndex];
+                        key.innerHTML = `<span class="pc-label">${keysMap[originalIndex].toUpperCase()}</span>`;
+                    }
+                    container.appendChild(key);
+                });
+            } else {
+                scale.forEach((note, index) => {
+                    const key = document.createElement('div');
+                    key.className = `key ${note.type}`; key.dataset.freq = note.freq; key.dataset.axis = axis;
+                    if(pcMode) {
+                        key.dataset.pc = keysMap[index];
+                        key.innerHTML = `<span class="pc-label">${keysMap[index].toUpperCase()}</span>`;
+                    }
+                    container.appendChild(key);
+                });
+            }
+        });
+    }
+
+    renderKeyboards();
+
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            currentMode = e.target.dataset.mode;
+            stopTone('X'); stopTone('Y');
+            renderKeyboards();
+        });
+    });
+
+    // --- 3. Eventos de Ratón, Táctil y Teclado Físico ---
+    function getVisualKey(axis, pcKey) {
+        const containerId = axis === 'X' ? 'keyboard-x' : 'keyboard-y';
+        return document.querySelector(`#${containerId} .key[data-pc="${pcKey}"]`);
+    }
+
+    ['keyboard-x', 'keyboard-y'].forEach(id => {
+        const kb = document.getElementById(id);
+        const axis = id.includes('x') ? 'X' : 'Y';
+        
+        // Función unificada para tocar
+        const handleInteractionStart = (e) => {
+            // Evitar comportamiento default si es táctil (evita scrolls accidentales)
+            if(e.type === 'touchstart') e.preventDefault(); 
+            
+            const key = e.target.closest('.key');
+            if(!key) return;
+            document.querySelectorAll(`#${id} .key`).forEach(k => k.classList.remove(axis==='X'?'active-x':'active-y'));
+            playTone(axis, key.dataset.freq, key);
+        };
+
+        const handleInteractionEnd = (e) => {
+            if(e.type === 'touchend') e.preventDefault();
+            const key = e.target.closest('.key');
+            if(key) stopTone(axis, key);
+        };
+
+        // Ratón
+        kb.addEventListener('mousedown', handleInteractionStart);
+        kb.addEventListener('mouseup', handleInteractionEnd);
+        kb.addEventListener('mouseleave', () => stopTone(axis));
+        
+        // Táctil (Móviles)
+        kb.addEventListener('touchstart', handleInteractionStart, {passive: false});
+        kb.addEventListener('touchend', handleInteractionEnd, {passive: false});
+        kb.addEventListener('touchcancel', () => stopTone(axis));
+    });
+
+    window.addEventListener('keydown', e => {
+        if (!pcMode || !audioCtx || e.repeat) return;
+        const k = e.key.toLowerCase();
+        if (pcKeysX.includes(k)) playTone('X', scales[currentMode][pcKeysX.indexOf(k)].freq, getVisualKey('X', k));
+        else if (pcKeysY.includes(k)) playTone('Y', scales[currentMode][pcKeysY.indexOf(k)].freq, getVisualKey('Y', k));
+    });
+
+    window.addEventListener('keyup', e => {
+        if (!pcMode || !audioCtx) return;
+        const k = e.key.toLowerCase();
+        if (pcKeysX.includes(k)) stopTone('X', getVisualKey('X', k));
+        if (pcKeysY.includes(k)) stopTone('Y', getVisualKey('Y', k));
+    });
+
+    // --- 4. Renderizado del Osciloscopio ---
+    let showBorders = false;
+    const plotBtn = document.getElementById('plot-btn');
+    plotBtn.addEventListener('click', () => {
+        showBorders = !showBorders;
+        plotBtn.classList.toggle('active');
+        plotBtn.textContent = `Proyección: ${showBorders ? 'ON' : 'OFF'}`;
+    });
+
+    const canvas = document.getElementById('osciloscopio');
+    const ctx = canvas.getContext('2d');
+    const phaseInput = document.getElementById('phase');
+    const readoutPhase = document.getElementById('readoutPhase');
+
+    function draw() {
+        ctx.fillStyle = 'rgba(3, 10, 5, 0.25)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for(let i=0; i<canvas.width; i+=50) {
+            ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height);
+            ctx.moveTo(0, i); ctx.lineTo(canvas.width, i);
+        }
+        ctx.stroke();
+
+        const currentPhaseRad = parseFloat(phaseInput.value) * (Math.PI / 180);
+        readoutPhase.textContent = phaseInput.value;
+
+        // Limites de dibujo y margen interno
+        const marginEdge = 15; 
+        const drawingMargin = 40; 
+        const A = canvas.width / 2 - drawingMargin; 
+        const B = canvas.height / 2 - drawingMargin; 
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const renderScale = 200; 
+
+        // FIGURA PRINCIPAL (Neón y Gruesa)
+        if (freqX > 0 || freqY > 0) {
+            ctx.strokeStyle = 'var(--osc-color)'; 
+            ctx.lineWidth = 5;       
+            ctx.shadowBlur = 20;     
+            ctx.shadowColor = 'var(--osc-color)';
+            ctx.beginPath();
+            
+            for (let t = 0; t < Math.PI * 2; t += 0.005) {
+                const actX = freqX > 0 ? freqX : 0;
+                const actY = freqY > 0 ? freqY : 0;
+                const x = centerX + (freqX > 0 ? A * Math.sin((actX/renderScale) * t + currentPhaseRad) : 0);
+                const y = centerY + (freqY > 0 ? B * Math.sin((actY/renderScale) * t) : 0);
+                if (t === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0; 
+        }
+
+        // PUNTOS Y LÍNEAS DE RASTREO
+        if (showBorders && (freqX > 0 || freqY > 0)) {
+            const timeScale = 15;
+            let instantTime = (performance.now() / 1000) * timeScale; 
+            
+            const currentX = centerX + (freqX > 0 ? A * Math.sin((freqX/renderScale) * instantTime + currentPhaseRad) : 0);
+            const currentY = centerY + (freqY > 0 ? B * Math.sin((freqY/renderScale) * instantTime) : 0);
+
+            // Líneas de rastreo (Crosshairs relativas)
+            ctx.setLineDash([5, 5]);
+            ctx.lineWidth = 2;
+            
+            if (freqX > 0) {
+                ctx.strokeStyle = 'var(--x-color)';
+                ctx.beginPath();
+                ctx.moveTo(currentX, canvas.height - marginEdge);
+                ctx.lineTo(currentX, currentY); 
+                ctx.stroke();
+            }
+
+            if (freqY > 0) {
+                ctx.strokeStyle = 'var(--y-color)';
+                ctx.beginPath();
+                ctx.moveTo(marginEdge, currentY);
+                ctx.lineTo(currentX, currentY); 
+                ctx.stroke();
+            }
+            ctx.setLineDash([]); 
+
+            // Puntos gruesos en el borde interno
+            if (freqX > 0) {
+                ctx.fillStyle = 'var(--x-color)';
+                ctx.beginPath();
+                ctx.arc(currentX, canvas.height - marginEdge, 10, 0, Math.PI * 2); 
+                ctx.fill();
+            }
+
+            if (freqY > 0) {
+                ctx.fillStyle = 'var(--y-color)';
+                ctx.beginPath();
+                ctx.arc(marginEdge, currentY, 10, 0, Math.PI * 2); 
+                ctx.fill();
+            }
+
+            // Punto localizador final (blanco) en la curva
+            if (freqX > 0 && freqY > 0) {
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(currentX, currentY, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        requestAnimationFrame(draw);
+    }
+
+    draw();
+</script>
+</body>
+</html>
